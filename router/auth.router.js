@@ -1,9 +1,10 @@
-
 import express from "express";
 
 import {
   register,
   login,
+  verifyEmail,
+  resendActivationEmail,
   forgotPassword,
   verifyResetToken,
   resetPassword,
@@ -15,8 +16,10 @@ import { authMiddleware } from "../middleware/auth.middleware.js";
 
 const router = express.Router();
 
-// Registration and login
+// Registration, email activation and login
 router.post("/register", register);
+router.get("/verify-email/:token", verifyEmail);
+router.post("/resend-activation", resendActivationEmail);
 router.post("/login", login);
 
 // Password recovery

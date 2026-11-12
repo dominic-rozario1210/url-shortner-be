@@ -39,6 +39,12 @@ export const authMiddleware = async (req, res, next) => {
       });
     }
 
+    if (user.isEmailVerified === false) {
+      return res.status(403).json({
+        message: "Please activate your email address before using this account."
+      });
+    }
+
     req.user = user;
     next();
 
@@ -72,6 +78,12 @@ export const optionalAuthMiddleware = async (req, res, next) => {
     if (!user) {
       return res.status(401).json({
         message: "Invalid authentication token"
+      });
+    }
+
+    if (user.isEmailVerified === false) {
+      return res.status(403).json({
+        message: "Please activate your email address before using this account."
       });
     }
 

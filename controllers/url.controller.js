@@ -130,26 +130,81 @@ export const getMyLinks = async (req, res) => {
 
 export const getLinkStats = async (req, res) => {
   try {
-    const [summary, topLinks] = await Promise.all([
+    const now = new Date();
+    const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const chartStart = new Date(todayStart);
+    chartStart.setUTCDate(chartStart.getUTCDate() - 6);
+    const userId = new mongoose.Types.ObjectId(req.user._id);
+
+    const [summaryResult, topLinks, dailyResults] = await Promise.all([
       ShortUrl.aggregate([
-        { $match: { user: new mongoose.Types.ObjectId(req.user._id) } },
+        { $match: { user: userId } },
         {
           $group: {
             _id: null,
             totalLinks: { $sum: 1 },
-            totalClicks: { $sum: "$clickCount" }
+            totalClicks: { $sum: "$clickCount" },
+            urlsToday: {
+              $sum: { $cond: [{ $gte: ["$createdAt", todayStart] }, 1, 0] }
+            },
+            urlsThisMonth: {
+              $sum: { $cond: [{ $gte: ["$createdAt", monthStart] }, 1, 0] }
+            }
           }
         }
       ]),
       ShortUrl.find({ user: req.user._id })
-        .sort({ clickCount: -1 })
+        .sort({ clickCount: -1, createdAt: -1 })
         .limit(5)
         .select("originalUrl shortCode clickCount createdAt")
-        .lean()
+        .lean(),
+      ShortUrl.aggregate([
+        { $match: { user: userId, createdAt: { $gte: chartStart } } },
+        {
+          $group: {
+            _id: {
+              $dateToString: { format: "%Y-%m-%d", date: "$createdAt", timezone: "UTC" }
+            },
+            urls: { $sum: 1 },
+            clicks: { $sum: "$clickCount" }
+          }
+        },
+        { $sort: { _id: 1 } }
+      ])
     ]);
 
+    const dailyMap = new Map(dailyResults.map((item) => [item._id, item]));
+    const chartData = [];
+
+    for (let offset = 0; offset < 7; offset += 1) {
+      const day = new Date(chartStart);
+      day.setUTCDate(chartStart.getUTCDate() + offset);
+      const key = day.toISOString().slice(0, 10);
+      const item = dailyMap.get(key);
+
+      chartData.push({
+        date: key,
+        urls: item?.urls || 0,
+        clicks: item?.clicks || 0
+      });
+    }
+
+    const summary = summaryResult[0] || {
+      totalLinks: 0,
+      totalClicks: 0,
+      urlsToday: 0,
+      urlsThisMonth: 0
+    };
+
     return res.status(200).json({
-      stats: summary[0] || { totalLinks: 0, totalClicks: 0 },
+      stats: {
+        totalLinks: summary.totalLinks,
+        urlsToday: summary.urlsToday,
+        urlsThisMonth: summary.urlsThisMonth,
+        totalClicks: summary.totalClicks
+      },
+      chartData,
       topLinks: topLinks.map((link) => ({
         ...link,
         shortUrl: `${getApiBaseUrl()}/${link.shortCode}`
